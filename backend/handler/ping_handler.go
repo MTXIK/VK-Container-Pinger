@@ -10,7 +10,7 @@ import (
 	"github.com/VK-Container-Pinger/backend/models"
 	"github.com/VK-Container-Pinger/backend/repository"
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 type Handler struct {

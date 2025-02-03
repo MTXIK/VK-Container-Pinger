@@ -11,6 +11,7 @@ type preparedStatements struct {
 	insertPing     *sql.Stmt
 	getPingResults *sql.Stmt
 	deleteOldPingResults *sql.Stmt
+	deleteOldRecordsForIps *sql.Stmt
 }
 
 type PingRepository struct {
@@ -60,6 +61,19 @@ func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	stmts.deleteOldRecordsForIps, err = db.Prepare(`
+        DELETE FROM pings
+        WHERE last_success < NOW() - INTERVAL '24 hours'
+          AND ip_address IN (
+            SELECT DISTINCT ip_address
+            FROM pings
+            WHERE last_success >= NOW() - INTERVAL '24 hours'
+          )
+    `)
+    if err != nil {
+        return nil, err
+    }
 
 	return stmts, nil
 }
@@ -108,4 +122,9 @@ func (r *PingRepository) GetPingResults(limit int) ([]models.PingResult, error) 
 func (r *PingRepository) DeleteOldPingResults(before time.Time) error {
 	_, err := r.stmts.deleteOldPingResults.Exec(before)
 	return err
+}
+
+func (r *PingRepository) DeleteOldRecordsForIps() error {
+    _, err := r.stmts.deleteOldRecordsForIps.Exec()
+    return err
 }

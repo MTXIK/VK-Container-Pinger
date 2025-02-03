@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -58,6 +59,19 @@ func main() {
 		RedisClient: redisClient,
 	}
 	go kafka.StartKafkaConsumer(cfg.KafkaBroker, "backend-group", []string{"ping-results"}, consumer)
+	
+	go func() {
+        ticker := time.NewTicker(24 * time.Hour)
+        for {
+            <-ticker.C
+            log.Println("Запуск удаления старых записей по IP...")
+            if err := repo.DeleteOldRecordsForIps(); err != nil {
+                log.Printf("Ошибка удаления старых записей: %v", err)
+            } else {
+                log.Println("Старые записи успешно удалены.")
+            }
+        }
+    }()
 	
 	router := gin.Default()
 	handler := handlers.NewHandler(repo, redisClient)

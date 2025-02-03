@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"time"
 	"github.com/VK-Container-Pinger/backend/models"
 )
 
@@ -9,6 +10,7 @@ type preparedStatements struct {
 	initTable      *sql.Stmt
 	insertPing     *sql.Stmt
 	getPingResults *sql.Stmt
+	deleteOldPingResults *sql.Stmt
 }
 
 type PingRepository struct {
@@ -50,6 +52,11 @@ func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
 	}
 
 	stmts.getPingResults, err = db.Prepare("SELECT ip_address, ping_time, last_success FROM pings ORDER BY id DESC LIMIT $1")
+	if err != nil {
+		return nil, err
+	}
+	
+	stmts.deleteOldPingResults, err = db.Prepare("DELETE FROM pings WHERE last_success < $1")
 	if err != nil {
 		return nil, err
 	}
@@ -96,4 +103,9 @@ func (r *PingRepository) GetPingResults(limit int) ([]models.PingResult, error) 
 	}
 	
 	return results, nil
+}
+
+func (r *PingRepository) DeleteOldPingResults(before time.Time) error {
+	_, err := r.stmts.deleteOldPingResults.Exec(before)
+	return err
 }

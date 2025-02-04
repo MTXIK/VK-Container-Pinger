@@ -3,14 +3,15 @@ package repository
 import (
 	"database/sql"
 	"time"
+	
 	"github.com/VK-Container-Pinger/backend/models"
 )
 
 type preparedStatements struct {
-	initTable      *sql.Stmt
-	insertPing     *sql.Stmt
-	getPingResults *sql.Stmt
-	deleteOldPingResults *sql.Stmt
+	initTable              *sql.Stmt
+	insertPing             *sql.Stmt
+	getPingResults         *sql.Stmt
+	deleteOldPingResults   *sql.Stmt
 	deleteOldRecordsForIps *sql.Stmt
 }
 
@@ -38,6 +39,7 @@ func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
 	stmts.initTable, err = db.Prepare(`
 		CREATE TABLE IF NOT EXISTS pings (
 			id SERIAL PRIMARY KEY,
+			docker_host_id INTEGER REFERENCES docker_hosts(id) ON DELETE CASCADE,
 			ip_address TEXT,
 			ping_time INTEGER,
 			last_success TIMESTAMP
@@ -47,33 +49,39 @@ func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
 		return nil, err
 	}
 
-	stmts.insertPing, err = db.Prepare("INSERT INTO pings (ip_address, ping_time, last_success) VALUES ($1, $2, $3)")
+	stmts.insertPing, err = db.Prepare(`
+		INSERT INTO pings (docker_host_id, ip_address, ping_time, last_success)
+		VALUES ($1, $2, $3, $4)
+	`)
 	if err != nil {
 		return nil, err
 	}
 
-	stmts.getPingResults, err = db.Prepare("SELECT ip_address, ping_time, last_success FROM pings ORDER BY id DESC LIMIT $1")
+	stmts.getPingResults, err = db.Prepare(`
+		SELECT docker_host_id, ip_address, ping_time, last_success
+		FROM pings ORDER BY id DESC LIMIT $1
+	`)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	stmts.deleteOldPingResults, err = db.Prepare("DELETE FROM pings WHERE last_success < $1")
 	if err != nil {
 		return nil, err
 	}
-	
+		
 	stmts.deleteOldRecordsForIps, err = db.Prepare(`
-        DELETE FROM pings
-        WHERE last_success < NOW() - INTERVAL '24 hours'
-          AND ip_address IN (
-            SELECT DISTINCT ip_address
-            FROM pings
-            WHERE last_success >= NOW() - INTERVAL '24 hours'
-          )
-    `)
-    if err != nil {
-        return nil, err
-    }
+		DELETE FROM pings
+		WHERE last_success < NOW() - INTERVAL '24 hours'
+		  AND ip_address IN (
+		    SELECT DISTINCT ip_address
+		    FROM pings
+		    WHERE last_success >= NOW() - INTERVAL '24 hours'
+		  )
+	`)
+	if err != nil {
+		return nil, err
+	}
 
 	return stmts, nil
 }
@@ -91,7 +99,7 @@ func (r *PingRepository) InsertPingResult(pr models.PingResult) error {
 	defer tx.Rollback()
 	
 	stmt := tx.Stmt(r.stmts.insertPing)
-	_, err = stmt.Exec(pr.IPAddress, pr.PingTime, pr.LastSuccess)
+	_, err = stmt.Exec(pr.DockerHostID, pr.IPAddress, pr.PingTime, pr.LastSuccess)
 	if err != nil {
 		return err
 	}
@@ -110,7 +118,7 @@ func (r *PingRepository) GetPingResults(limit int) ([]models.PingResult, error) 
 	results := make([]models.PingResult, 0)
 	for rows.Next() {
 		var pr models.PingResult
-		if err := rows.Scan(&pr.IPAddress, &pr.PingTime, &pr.LastSuccess); err != nil {
+		if err := rows.Scan(&pr.DockerHostID, &pr.IPAddress, &pr.PingTime, &pr.LastSuccess); err != nil {
 			continue
 		}
 		results = append(results, pr)

@@ -40,12 +40,20 @@ func main() {
 	}
 	log.Println("Подключение к PostgreSQL установлено.")
 	
-	repo, err := repository.NewPingRepository(db)
+	pingRepo, err := repository.NewPingRepository(db)
 	if err != nil {
-		log.Fatalf("Ошибка создания репозитория: %v", err)
+		log.Fatalf("Ошибка создания репозитория пингов: %v", err)
 	}
-	if err := repo.InitTable(); err != nil {
-		log.Fatalf("Ошибка инициализации таблицы: %v", err)
+	if err := pingRepo.InitTable(); err != nil {
+		log.Fatalf("Ошибка инициализации таблицы пингов: %v", err)
+	}
+	
+	dockerHostRepo, err := repository.NewDockerHostRepository(db)
+	if err != nil {
+		log.Fatalf("Ошибка создания репозитория docker-хостов: %v", err)
+	}
+	if err := dockerHostRepo.InitTable(); err != nil {
+		log.Fatalf("Ошибка инициализации таблицы docker-хостов: %v", err)
 	}
 	
 	redisClient := cache.NewRedisClient(cfg.RedisAddr)
@@ -55,7 +63,7 @@ func main() {
 	log.Println("Подключение к Redis установлено.")
 	
 	consumer := &kafka.Consumer{
-		Repo:        repo,
+		Repo:        pingRepo,
 		RedisClient: redisClient,
 	}
 	go kafka.StartKafkaConsumer(cfg.KafkaBroker, "backend-group", []string{"ping-results"}, consumer)
@@ -65,7 +73,7 @@ func main() {
         for {
             <-ticker.C
             log.Println("Запуск удаления старых записей по IP...")
-            if err := repo.DeleteOldRecordsForIps(); err != nil {
+            if err := pingRepo.DeleteOldRecordsForIps(); err != nil {
                 log.Printf("Ошибка удаления старых записей: %v", err)
             } else {
                 log.Println("Старые записи успешно удалены.")
@@ -74,13 +82,19 @@ func main() {
     }()
 	
 	router := gin.Default()
-	handler := handlers.NewHandler(repo, redisClient)
-	
-	// обработчики HTTP-запросов.
-	router.GET("/api/pings", handler.GetPings)
-	router.POST("/api/ping", handler.PostPing)
-	router.DELETE("/api/pings/old", handler.DeleteOldPings)
 
+	// Эндпоинты для пингов
+	pingHandler := handlers.NewHandler(pingRepo, redisClient)
+	router.GET("/api/pings", pingHandler.GetPings)
+	router.POST("/api/ping", pingHandler.PostPing)
+	router.DELETE("/api/pings/old", pingHandler.DeleteOldPings)
+	
+	// Эндпоинты для docker‑хостов
+	dockerHostHandler := handlers.NewDockerHostHandler(dockerHostRepo)
+	router.GET("/api/docker-hosts", dockerHostHandler.GetDockerHosts)
+	router.POST("/api/docker-hosts", dockerHostHandler.AddDockerHost)
+	router.DELETE("/api/docker-hosts/:id", dockerHostHandler.DeleteDockerHost)
+	
 	log.Printf("Запуск backend-сервиса на порту %s", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("Ошибка запуска сервера: %v", err)

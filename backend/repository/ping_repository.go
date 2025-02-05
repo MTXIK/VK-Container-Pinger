@@ -25,7 +25,7 @@ func NewPingRepository(db *sql.DB) (*PingRepository, error) {
 			id SERIAL PRIMARY KEY,
 			ip_address TEXT UNIQUE,
 			container_name TEXT,
-			ping_time INTEGER,
+			ping_time DOUBLE PRECISION,
 			last_success TIMESTAMP
 		);
 	`)
@@ -116,7 +116,8 @@ func (r *PingRepository) GetPingResults(limit int) ([]models.PingResult, error) 
 	var results []models.PingResult
 	for rows.Next() {
 		var pr models.PingResult
-		if err := rows.Scan(&pr.IPAddress, &pr.ContainerName, &pr.PingTime, &pr.LastSuccess); err != nil {
+		err := rows.Scan(&pr.IPAddress, &pr.ContainerName, &pr.PingTime, &pr.LastSuccess)
+		if err != nil {
 			continue
 		}
 		results = append(results, pr)

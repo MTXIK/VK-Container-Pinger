@@ -13,19 +13,19 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type PingHandler struct {
+type Handler struct {
 	Repo        *repository.PingRepository
 	RedisClient *redis.Client
 }
 
-func NewHandler(repo *repository.PingRepository, redisClient *redis.Client) *PingHandler {
-	return &PingHandler{
+func NewHandler(repo *repository.PingRepository, redisClient *redis.Client) *Handler {
+	return &Handler{
 		Repo:        repo,
 		RedisClient: redisClient,
 	}
 }
 
-func (h *PingHandler) GetPings(c *gin.Context) {
+func (h *Handler) GetPings(c *gin.Context) {
 	cacheKey := "pings_cache"
 	cached, err := cache.GetCache(h.RedisClient, cacheKey)
 	if err == nil {
@@ -54,7 +54,7 @@ func (h *PingHandler) GetPings(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
-func (h *PingHandler) PostPing(c *gin.Context) {
+func (h *Handler) PostPing(c *gin.Context) {
 	var pr models.PingResult
 	if err := c.ShouldBindJSON(&pr); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат запроса"})
@@ -70,7 +70,7 @@ func (h *PingHandler) PostPing(c *gin.Context) {
 	c.Status(http.StatusCreated)
 }
 
-func (h *PingHandler) DeleteOldPings(c *gin.Context) {
+func (h *Handler) DeleteOldPings(c *gin.Context) {
 	beforeStr := c.Query("before")
 	if beforeStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Параметр 'before' обязателен и должен быть в формате RFC3339"})

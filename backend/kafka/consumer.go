@@ -8,13 +8,13 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/redis/go-redis/v9"
+	"github.com/VK-Container-Pinger/backend/cache"
 	"github.com/VK-Container-Pinger/backend/models"
 	"github.com/VK-Container-Pinger/backend/repository"
-	"github.com/VK-Container-Pinger/backend/cache"
 )
 
 type Consumer struct {
-	Repo *repository.PingRepository
+	Repo        *repository.PingRepository
 	RedisClient *redis.Client
 }
 
@@ -22,10 +22,13 @@ type ConsumerGroupHandler struct {
 	Consumer *Consumer
 }
 
-//реализация интерфейса sarama.ConsumerGroupHandler
-func (h *ConsumerGroupHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (h *ConsumerGroupHandler) Setup(session sarama.ConsumerGroupSession) error {
+	return nil
+}
 
-func (h *ConsumerGroupHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+func (h *ConsumerGroupHandler) Cleanup(session sarama.ConsumerGroupSession) error {
+	return nil
+}
 
 func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for message := range claim.Messages() {
@@ -40,7 +43,7 @@ func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 		if err := h.Consumer.Repo.InsertPingResult(pr); err != nil {
 			log.Printf("Ошибка записи в базу данных: %s", err)
 			continue
-		}else{
+		} else {
 			if err := cache.DeleteCache(h.Consumer.RedisClient, "pings_cache"); err != nil {
 				log.Printf("Ошибка удаления кэша: %s", err)
 			}

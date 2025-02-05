@@ -3,12 +3,11 @@ package repository
 import (
 	"database/sql"
 	"time"
-	
+
 	"github.com/VK-Container-Pinger/backend/models"
 )
 
 type preparedStatements struct {
-	initTable              *sql.Stmt
 	insertPing             *sql.Stmt
 	getPingResults         *sql.Stmt
 	deleteOldPingResults   *sql.Stmt
@@ -16,31 +15,16 @@ type preparedStatements struct {
 }
 
 type PingRepository struct {
-	DB *sql.DB
+	DB    *sql.DB
 	stmts *preparedStatements
 }
 
 func NewPingRepository(db *sql.DB) (*PingRepository, error) {
-	stmts, err := newPreparedStatements(db)
-	if err != nil {
-		return nil, err
-	}
-	
-	return &PingRepository{
-		DB: db,
-		stmts: stmts,
-	}, nil
-}
-
-func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
-	var err error
-	stmts := &preparedStatements{}
-
-	stmts.initTable, err = db.Prepare(`
+	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS pings (
 			id SERIAL PRIMARY KEY,
-			docker_host_id INTEGER REFERENCES docker_hosts(id) ON DELETE CASCADE,
-			ip_address TEXT,
+			ip_address TEXT UNIQUE,
+			container_name TEXT,
 			ping_time INTEGER,
 			last_success TIMESTAMP
 		);
@@ -49,17 +33,37 @@ func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
 		return nil, err
 	}
 
+	stmts, err := newPreparedStatements(db)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PingRepository{
+		DB:    db,
+		stmts: stmts,
+	}, nil
+}
+
+func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
+	var err error
+	stmts := &preparedStatements{}
+
 	stmts.insertPing, err = db.Prepare(`
-		INSERT INTO pings (docker_host_id, ip_address, ping_time, last_success)
+		INSERT INTO pings (ip_address, container_name, ping_time, last_success)
 		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (ip_address) DO UPDATE
+		SET container_name = EXCLUDED.container_name,
+		    ping_time = EXCLUDED.ping_time,
+		    last_success = EXCLUDED.last_success
 	`)
 	if err != nil {
 		return nil, err
 	}
 
 	stmts.getPingResults, err = db.Prepare(`
-		SELECT docker_host_id, ip_address, ping_time, last_success
-		FROM pings ORDER BY id DESC LIMIT $1
+		SELECT ip_address, container_name, ping_time, last_success
+		FROM pings
+		ORDER BY id DESC LIMIT $1
 	`)
 	if err != nil {
 		return nil, err
@@ -69,26 +73,21 @@ func newPreparedStatements(db *sql.DB) (*preparedStatements, error) {
 	if err != nil {
 		return nil, err
 	}
-		
+
 	stmts.deleteOldRecordsForIps, err = db.Prepare(`
-		DELETE FROM pings
-		WHERE last_success < NOW() - INTERVAL '24 hours'
-		  AND ip_address IN (
-		    SELECT DISTINCT ip_address
-		    FROM pings
-		    WHERE last_success >= NOW() - INTERVAL '24 hours'
-		  )
-	`)
+        DELETE FROM pings
+        WHERE last_success < NOW() - INTERVAL '24 hours'
+          AND ip_address IN (
+            SELECT DISTINCT ip_address
+            FROM pings
+            WHERE last_success >= NOW() - INTERVAL '24 hours'
+          )
+    `)
 	if err != nil {
 		return nil, err
 	}
 
 	return stmts, nil
-}
-
-func (r *PingRepository) InitTable() error {
-	_, err := r.stmts.initTable.Exec()
-	return err
 }
 
 func (r *PingRepository) InsertPingResult(pr models.PingResult) error {
@@ -97,15 +96,14 @@ func (r *PingRepository) InsertPingResult(pr models.PingResult) error {
 		return err
 	}
 	defer tx.Rollback()
-	
+
 	stmt := tx.Stmt(r.stmts.insertPing)
-	_, err = stmt.Exec(pr.DockerHostID, pr.IPAddress, pr.PingTime, pr.LastSuccess)
+	_, err = stmt.Exec(pr.IPAddress, pr.ContainerName, pr.PingTime, pr.LastSuccess)
 	if err != nil {
 		return err
 	}
-	
-	err = tx.Commit()
-	return err
+
+	return tx.Commit()
 }
 
 func (r *PingRepository) GetPingResults(limit int) ([]models.PingResult, error) {
@@ -114,16 +112,15 @@ func (r *PingRepository) GetPingResults(limit int) ([]models.PingResult, error) 
 		return nil, err
 	}
 	defer rows.Close()
-	
-	results := make([]models.PingResult, 0)
+
+	var results []models.PingResult
 	for rows.Next() {
 		var pr models.PingResult
-		if err := rows.Scan(&pr.DockerHostID, &pr.IPAddress, &pr.PingTime, &pr.LastSuccess); err != nil {
+		if err := rows.Scan(&pr.IPAddress, &pr.ContainerName, &pr.PingTime, &pr.LastSuccess); err != nil {
 			continue
 		}
 		results = append(results, pr)
 	}
-	
 	return results, nil
 }
 
@@ -133,6 +130,6 @@ func (r *PingRepository) DeleteOldPingResults(before time.Time) error {
 }
 
 func (r *PingRepository) DeleteOldRecordsForIps() error {
-    _, err := r.stmts.deleteOldRecordsForIps.Exec()
-    return err
+	_, err := r.stmts.deleteOldRecordsForIps.Exec()
+	return err
 }

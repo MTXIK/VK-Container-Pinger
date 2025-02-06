@@ -34,6 +34,7 @@ func getContainerInfos(cli *dockerClient.Client) (map[string]ContainerInfo, erro
 	if err != nil {
 		return nil, err
 	}
+	
 	results := make(map[string]ContainerInfo)
 	for _, container := range containers {
 		var name string
@@ -42,12 +43,14 @@ func getContainerInfos(cli *dockerClient.Client) (map[string]ContainerInfo, erro
 		} else {
 			name = container.ID[:12]
 		}
+		
 		var ips []string
 		for _, netSettings := range container.NetworkSettings.Networks {
 			if netSettings.IPAddress != "" {
 				ips = append(ips, netSettings.IPAddress)
 			}
 		}
+		
 		results[container.ID] = ContainerInfo{
 			ID:   container.ID,
 			Name: name,
@@ -64,13 +67,16 @@ func pingContainer(ip, containerID, containerName string, wg *sync.WaitGroup, re
 		log.Printf("Ошибка создания пингера для %s: %v", ip, err)
 		return
 	}
+	
 	pinger.SetPrivileged(true)
 	pinger.Count = 3
 	pinger.Timeout = 5 * time.Second
+	
 	if err := pinger.Run(); err != nil {
 		log.Printf("Ошибка пинга %s: %v", ip, err)
 		return
 	}
+	
 	stats := pinger.Statistics()
 	pingTime := float64(stats.AvgRtt) / float64(time.Millisecond)
 	results <- &PingResult{
@@ -87,10 +93,12 @@ func publishResult(producer sarama.SyncProducer, result *PingResult) error {
 	if err != nil {
 		return err
 	}
+	
 	msg := &sarama.ProducerMessage{
 		Topic: "ping-results",
 		Value: sarama.ByteEncoder(data),
 	}
+	
 	_, _, err = producer.SendMessage(msg)
 	return err
 }
@@ -100,15 +108,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Ошибка создания клиента Docker: %s", err)
 	}
+	
 	kafkaBroker := os.Getenv("KAFKA_BROKER")
 	if kafkaBroker == "" {
 		kafkaBroker = "kafka:9092"
 	}
+	
 	producer, err := sarama.NewSyncProducer([]string{kafkaBroker}, nil)
 	if err != nil {
 		log.Fatalf("Ошибка создания продюсера Kafka: %s", err)
 	}
 	defer producer.Close()
+	
 	pingIntervalStr := os.Getenv("PING_INTERVAL")
 	if pingIntervalStr == "" {
 		pingIntervalStr = "10s"
@@ -118,6 +129,7 @@ func main() {
 		log.Printf("Неверный формат PING_INTERVAL, используется значение по умолчанию: 10s. Ошибка: %v", err)
 		pingInterval = 10 * time.Second
 	}
+	
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 	for range ticker.C {

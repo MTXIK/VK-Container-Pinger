@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-contrib/cors"
 	_ "github.com/lib/pq"
 
 	"github.com/VK-Container-Pinger/backend/cache"
@@ -70,6 +71,7 @@ func main() {
 	}()
 
 	router := gin.Default()
+	router.Use(cors.Default())
 	handler := handlers.NewHandler(pingRepo, redisClient)
 
 	router.GET("/api/pings", handler.GetPings)

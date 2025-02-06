@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table } from 'antd';
+import { Table, Tag } from 'antd';
 import { Ping } from '../hooks/usePings';
 
 interface PingTableProps {
@@ -7,6 +7,9 @@ interface PingTableProps {
 }
 
 const PingTable: React.FC<PingTableProps> = ({ pings }) => {
+  const pollInterval = 10000; // интервал опроса в миллисекундах (10 секунд)
+  const threshold = 2000;     // дополнительное время в миллисекундах (2 секунды)
+
   const columns = [
     {
       title: 'IP адрес',
@@ -29,6 +32,16 @@ const PingTable: React.FC<PingTableProps> = ({ pings }) => {
       dataIndex: 'last_success',
       key: 'last_success',
       render: (text: string) => new Date(text).toLocaleString(),
+    },
+    {
+      title: 'Статус',
+      key: 'status',
+      render: (_: any, record: Ping) => {
+        const lastPing = new Date(record.last_success).getTime();
+        const diff = Date.now() - lastPing;
+        const isDown = diff > pollInterval + threshold;
+        return <Tag color={isDown ? 'red' : 'green'}>{isDown ? 'Probably Down' : 'Probably Up'}</Tag>;
+      },
     },
   ];
 
